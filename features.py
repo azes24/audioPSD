@@ -4,10 +4,10 @@ import numpy as np
 import librosa
 
 SR = 16000                      # sample rate seragam
-CHUNK_SEC = 5                   # durasi chunk (detik)
-CHUNK_LEN = SR * CHUNK_SEC      # 80.000 sampel
+CHUNK_SEC = 3                   # durasi chunk (detik)
+CHUNK_LEN = SR * CHUNK_SEC      # 48.000 sampel
 TOP_DB = 25                     # ambang silence removal
-MIN_CHUNK_SEC = 2.0             # sisa potongan terakhir < ini dibuang
+MIN_CHUNK_SEC = 1.0             # sisa potongan terakhir < ini dibuang
 USE_SILENCE_REMOVAL = True      # ubah ke False untuk membandingkan
 
 FEATURE_NAMES = (
@@ -33,7 +33,7 @@ def remove_silence(y, top_db=None):
 
 
 def make_chunks(y):
-    """Potong jadi segmen 5 detik. Sisa >= 2 detik di-padding (wrap), sisanya dibuang."""
+    """Potong jadi segmen 3 detik. Sisa >= 1 detik di-padding (wrap), sisanya dibuang."""
     chunks = []
     for s in range(0, len(y), CHUNK_LEN):
         c = y[s:s + CHUNK_LEN]
@@ -64,6 +64,6 @@ def file_to_features(path):
 
 
 def signal_to_features(y):
-    """Sinyal live (16 kHz, ~5 detik) -> vektor fitur (1, 32). Dipakai saat inference."""
+    """Sinyal live (16 kHz, ~3 detik) -> vektor fitur (1, 32). Dipakai saat inference."""
     y = remove_silence(y)
     return extract_features(y).reshape(1, -1)

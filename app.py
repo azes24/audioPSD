@@ -16,6 +16,7 @@ model, THRESHOLD = bundle["model"], bundle["threshold"]
 LOG_FILE = Path("log_kebisingan.csv")
 
 app = Flask(__name__)
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 
 def log_event(prob, noisy, db):
@@ -35,24 +36,26 @@ def index():
 
 @app.post("/predict")
 def predict():
-    """Terima PCM float32 mentah (mono) dari browser, query ?sr=<sample rate browser>."""
+    """Terima PCM float32 mentah (mono) dari browser, query ?sr=<sample rate browser>&th=<threshold>."""
     sr = int(request.args.get("sr", 48000))
+    th = float(request.args.get("th", THRESHOLD))
     y = np.frombuffer(request.get_data(), dtype=np.float32)
     if len(y) < sr or not np.isfinite(y).all():
         return jsonify(error="audio tidak valid / terlalu pendek"), 400
     if sr != ft.SR:
         y = librosa.resample(y, orig_sr=sr, target_sr=ft.SR)
     prob = float(model.predict_proba(ft.signal_to_features(y))[0, 1])
-    noisy = prob >= THRESHOLD
+    noisy = prob >= th
     db = float(20 * np.log10(np.sqrt(np.mean(y ** 2)) + 1e-9))
     log_event(prob, noisy, db)
-    return jsonify(prob=prob, noisy=bool(noisy), db=db, threshold=THRESHOLD)
+    return jsonify(prob=prob, noisy=bool(noisy), db=db, threshold=th)
 
 
 @app.post("/predict_file")
 def predict_file():
-    """Analisis file audio unggahan: prediksi per chunk 5 detik."""
+    """Analisis file audio unggahan: prediksi per chunk 3 detik."""
     f = request.files.get("file")
+    th = float(request.form.get("th", THRESHOLD))
     if not f:
         return jsonify(error="file tidak ada"), 400
     try:
@@ -64,9 +67,10 @@ def predict_file():
         return jsonify(error="audio terlalu pendek / hampir seluruhnya hening"), 400
     X = np.vstack([ft.extract_features(c) for c in chunks])
     probs = model.predict_proba(X)[:, 1]
-    flags = probs >= THRESHOLD
+    flags = probs >= th
     return jsonify(chunks=[{"prob": float(p), "noisy": bool(b)} for p, b in zip(probs, flags)],
-                   noisy_ratio=float(flags.mean()), verdict="BERISIK" if flags.mean() >= 0.5 else "TENANG")
+                   noisy_ratio=float(flags.mean()), verdict="BERISIK" if flags.mean() >= 0.5 else "TENANG",
+                   threshold=th)
 
 
 if __name__ == "__main__":
