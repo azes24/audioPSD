@@ -1,12 +1,13 @@
 """Smart Noise Alert System - backend Flask.
 Jalankan: python app.py  ->  http://localhost:5000
 """
-import csv, io, datetime
+import csv, datetime, io, math
 from pathlib import Path
 
 import joblib
 import librosa
 import numpy as np
+import scipy.signal
 from flask import Flask, jsonify, render_template, request
 
 import features as ft
@@ -17,6 +18,16 @@ LOG_FILE = Path("log_kebisingan.csv")
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+
+def resample_audio(y, orig_sr, target_sr):
+    """Resample audio cepat menggunakan resample_poly (jauh lebih efisien dari default librosa)."""
+    if orig_sr == target_sr:
+        return y
+    g = math.gcd(orig_sr, target_sr)
+    up = target_sr // g
+    down = orig_sr // g
+    return scipy.signal.resample_poly(y, up, down).astype(np.float32)
 
 
 def log_event(prob, noisy, db):
@@ -43,7 +54,7 @@ def predict():
     if len(y) < sr or not np.isfinite(y).all():
         return jsonify(error="audio tidak valid / terlalu pendek"), 400
     if sr != ft.SR:
-        y = librosa.resample(y, orig_sr=sr, target_sr=ft.SR)
+        y = resample_audio(y, orig_sr=sr, target_sr=ft.SR)
     prob = float(model.predict_proba(ft.signal_to_features(y))[0, 1])
     noisy = prob >= th
     db = float(20 * np.log10(np.sqrt(np.mean(y ** 2)) + 1e-9))
