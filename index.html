@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Noise Alert - Lab Teknik Informatika UTM</title>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--text:#1c1f26;--muted:#6b7280;--line:#e5e7eb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e8eaed;--muted:#9aa0a6;--line:#2a2f38}}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+  main{max-width:820px;margin:0 auto;padding:24px 16px 48px}
+  h1{font-size:1.35rem;margin:0 0 2px} .sub{color:var(--muted);margin:0 0 20px;font-size:.9rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+  .status{text-align:center;padding:28px 12px;border-radius:12px;font-size:2rem;font-weight:700;color:#fff;background:#6b7280;transition:background .3s}
+  .status.ok{background:var(--ok)} .status.warn{background:var(--warn)} .status.bad{background:var(--bad);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.75}}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  button{font:inherit;padding:10px 18px;border-radius:10px;border:0;background:#2563eb;color:#fff;cursor:pointer}
+  button.stop{background:#6b7280} button:disabled{opacity:.5;cursor:default}
+  label{font-size:.9rem;color:var(--muted)} input[type=number]{width:60px;font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)}
+  .meter{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:14px}
+  .meter>div{height:100%;width:0;background:var(--ok);transition:width .3s,background .3s}
+  .stats{display:flex;gap:24px;margin-top:10px;color:var(--muted);font-size:.9rem;flex-wrap:wrap}
+  .strip{display:flex;gap:4px;margin-top:14px;flex-wrap:wrap}
+  .strip span{width:18px;height:18px;border-radius:4px;background:var(--ok)} .strip span.n{background:var(--bad)}
+  h2{font-size:1rem;margin:0 0 8px} small{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:.88rem} td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
+  .err{color:var(--bad);margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Smart Noise Alert System</h1>
+  <p class="sub">Laboratorium Teknik Informatika UTM &middot; model: {{ model_name }} &middot; threshold: {{ threshold }}</p>
+
+  <section class="card">
+    <h2>Monitoring Langsung (Mikrofon)</h2>
+    <div id="status" class="status">Belum aktif</div>
+    <div class="meter"><div id="bar"></div></div>
+    <div class="stats"><span>Probabilitas berisik: <b id="prob">-</b></span><span>Level: <b id="db">-</b></span><span>Chunk diproses: <b id="count">0</b></span></div>
+    <div class="strip" id="strip"></div>
+    <div class="row">
+      <button id="btnStart">Mulai Monitoring</button>
+      <button id="btnStop" class="stop" disabled>Berhenti</button>
+      <label>Alarm jika <input id="needK" type="number" min="1" value="2"> dari <input id="winM" type="number" min="1" value="3"> chunk terakhir berisik</label>
+      <label><input id="sound" type="checkbox" checked> bunyi alarm</label>
+    </div>
+    <div id="err" class="err"></div>
+    <small>Setiap chunk = 5 detik. Mikrofon butuh <code>localhost</code> atau HTTPS. Filter noise/echo/auto-gain browser dimatikan agar fitur sama dengan data latih.</small>
+  </section>
+
+  <section class="card">
+    <h2>Analisis File Audio</h2>
+    <div class="row" style="margin-top:0">
+      <input id="file" type="file" accept="audio/*">
+      <button id="btnFile">Analisis</button>
+    </div>
+    <div id="fileOut" style="margin-top:12px"></div>
+  </section>
+
+  <section class="card">
+    <h2>Riwayat</h2>
+    <table><thead><tr><th>Waktu</th><th>Prob.</th><th>Level</th><th>Hasil</th></tr></thead><tbody id="log"></tbody></table>
+  </section>
+</main>
+
+<script>
+const WINDOW_SEC = 5;
+let ctx = null, stream = null, proc = null, buf = [], collected = 0, running = false, history = [], total = 0;
+const $ = id => document.getElementById(id);
+
+function setStatus(cls, text){ const s = $("status"); s.className = "status " + cls; s.textContent = text; }
+
+function beep(){
+  if(!ctx) return;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.value = 880; g.gain.value = 0.25;
+  o.connect(g); g.connect(ctx.destination);
+  o.start(); o.stop(ctx.currentTime + 0.5);
+}
+function alarm(){ if($("sound").checked){ beep(); setTimeout(beep, 700); setTimeout(beep, 1400); } }
+
+async function start(){
+  $("err").textContent = "";
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+  }catch(e){ $("err").textContent = "Mikrofon tidak bisa diakses: " + e.message; return; }
+  ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(stream);
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = e => {
+    if(!running) return;
+    buf.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    collected += buf[buf.length-1].length;
+    if(collected >= ctx.sampleRate * WINDOW_SEC) sendChunk();
+  };
+  src.connect(proc); proc.connect(ctx.destination);
+  running = true; history = []; buf = []; collected = 0;
+  $("btnStart").disabled = true; $("btnStop").disabled = false;
+  setStatus("", "Mendengarkan...");
+}
+
+function stop(){
+  running = false;
+  if(proc){ proc.disconnect(); proc = null; }
+  if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if(ctx){ ctx.close(); ctx = null; }
+  $("btnStart").disabled = false; $("btnStop").disabled = true;
+  setStatus("", "Dihentikan");
+}
+
+async function sendChunk(){
+  const merged = new Float32Array(collected); let o = 0;
+  for(const b of buf){ merged.set(b, o); o += b.length; }
+  buf = []; collected = 0;
+  try{
+    const r = await fetch("/predict?sr=" + ctx.sampleRate, {method:"POST", body: merged.buffer});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || r.status);
+    handleResult(d);
+  }catch(e){ $("err").textContent = "Gagal memproses: " + e.message; }
+}
+
+function handleResult(d){
+  total++;
+  history.push(d.noisy);
+  const M = Math.max(1, +$("winM").value), K = Math.max(1, +$("needK").value);
+  history = history.slice(-M);
+  const noisyCount = history.filter(Boolean).length;
+  const alarmOn = noisyCount >= K;
+
+  $("prob").textContent = (d.prob * 100).toFixed(0) + "%";
+  $("db").textContent = d.db.toFixed(0) + " dBFS";
+  $("count").textContent = total;
+  $("bar").style.width = (d.prob * 100) + "%";
+  $("bar").style.background = d.noisy ? "var(--bad)" : "var(--ok)";
+
+  if(alarmOn){ setStatus("bad", "BERISIK - HARAP TENANG"); alarm(); }
+  else if(d.noisy){ setStatus("warn", "Mulai ramai..."); }
+  else { setStatus("ok", "Tenang"); }
+
+  const dot = document.createElement("span"); if(d.noisy) dot.className = "n";
+  $("strip").appendChild(dot); while($("strip").children.length > 40) $("strip").removeChild($("strip").firstChild);
+
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${new Date().toLocaleTimeString()}</td><td>${(d.prob*100).toFixed(0)}%</td><td>${d.db.toFixed(0)} dBFS</td><td>${d.noisy ? "Berisik" : "Tenang"}${alarmOn ? " (ALARM)" : ""}</td>`;
+  $("log").prepend(tr); while($("log").children.length > 30) $("log").removeChild($("log").lastChild);
+}
+
+async function analyzeFile(){
+  const f = $("file").files[0]; if(!f){ $("fileOut").textContent = "Pilih file dulu."; return; }
+  $("fileOut").textContent = "Menganalisis...";
+  const fd = new FormData(); fd.append("file", f);
+  const r = await fetch("/predict_file", {method:"POST", body: fd}); const d = await r.json();
+  if(!r.ok){ $("fileOut").innerHTML = `<span class="err">${d.error}</span>`; return; }
+  const dots = d.chunks.map(c => `<span class="${c.noisy ? "n" : ""}" title="${(c.prob*100).toFixed(0)}%"></span>`).join("");
+  $("fileOut").innerHTML = `<b>${d.verdict}</b> &middot; ${(d.noisy_ratio*100).toFixed(0)}% dari ${d.chunks.length} chunk terdeteksi berisik<div class="strip">${dots}</div>`;
+}
+
+$("btnStart").onclick = start; $("btnStop").onclick = stop; $("btnFile").onclick = analyzeFile;
+</script>
+</body>
+</html>

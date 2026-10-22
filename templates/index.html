@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Noise Alert — Teknik Informatika UTM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & tokens ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #f9fafb;
+  --surface:  #ffffff;
+  --border:   #e5e7eb;
+  --text:     #111827;
+  --muted:    #6b7280;
+  --accent:   #2563eb;
+  --ok:       #16a34a;
+  --warn:     #d97706;
+  --danger:   #dc2626;
+  --radius:   8px;
+  --shadow:   0 1px 3px rgba(0,0,0,.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #0f1117;
+    --surface: #1a1d27;
+    --border:  #2d3142;
+    --text:    #f3f4f6;
+    --muted:   #9ca3af;
+  }
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+}
+header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -.01em; }
+header p  { color: var(--muted); font-size: .8125rem; margin-top: 2px; }
+
+/* ── Card ───────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+/* ── Status banner ──────────────────────────────────── */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-weight: 500;
+  font-size: .9375rem;
+  margin-bottom: 16px;
+  transition: background .2s, border-color .2s, color .2s;
+}
+.banner .dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.banner.ok   { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+.banner.ok   .dot { background: var(--ok); }
+.banner.warn { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+.banner.warn .dot { background: var(--warn); }
+.banner.bad  { background: #fef2f2; border-color: #fca5a5; color: var(--danger); animation: flash 1s step-end infinite; }
+.banner.bad  .dot { background: var(--danger); }
+
+@media (prefers-color-scheme: dark) {
+  .banner.ok   { background: #052e16; border-color: #166534; color: #86efac; }
+  .banner.warn { background: #1c1407; border-color: #92400e; color: #fcd34d; }
+  .banner.bad  { background: #1c0505; border-color: #7f1d1d; color: #fca5a5; }
+}
+
+@keyframes flash { 50% { opacity: .55; } }
+
+/* ── Probability bar ────────────────────────────────── */
+.prob-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.prob-label { color: var(--muted); font-size: .8125rem; width: 110px; flex-shrink: 0; }
+.prob-track {
+  flex: 1; height: 6px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.prob-fill {
+  height: 100%; width: 0%;
+  border-radius: 99px;
+  background: var(--ok);
+  transition: width .3s, background .3s;
+}
+.prob-val { font-size: .8125rem; color: var(--muted); width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Stat pills ─────────────────────────────────────── */
+.stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  min-width: 90px;
+}
+.stat-label { font-size: .6875rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.stat-value { font-size: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ── History strip ──────────────────────────────────── */
+.strip { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 16px; min-height: 14px; }
+.strip-dot { width: 14px; height: 14px; border-radius: 3px; background: var(--ok); }
+.strip-dot.noisy { background: var(--danger); }
+
+/* ── Controls ───────────────────────────────────────── */
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.btn {
+  font: inherit; font-size: .875rem; font-weight: 500;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.btn:disabled { opacity: .4; cursor: default; }
+.btn-primary  { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:not(:disabled):hover  { opacity: .88; }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-secondary:not(:disabled):hover { background: var(--bg); }
+
+.alarm-label {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: .8125rem; cursor: pointer; user-select: none;
+}
+.alarm-label input[type=checkbox] { accent-color: var(--accent); }
+
+.window-row {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: .8125rem;
+}
+.window-row input[type=number] {
+  width: 46px; padding: 4px 6px;
+  border: 1px solid var(--border); border-radius: 5px;
+  font: inherit; font-size: .8125rem;
+  background: var(--surface); color: var(--text); text-align: center;
+}
+
+.err-msg { font-size: .8125rem; color: var(--danger); margin-top: 10px; min-height: 1em; }
+.hint    { margin-top: 14px; font-size: .75rem; color: var(--muted); }
+
+/* ── File section ───────────────────────────────────── */
+.file-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.file-pick-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; font-size: .875rem; font-weight: 500;
+  background: var(--surface); color: var(--text);
+  transition: background .15s;
+}
+.file-pick-label:hover { background: var(--bg); }
+.file-pick-label input { display: none; }
+#file-name { font-size: .8125rem; color: var(--muted); }
+
+.file-result { margin-top: 16px; }
+.verdict { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+.verdict.ok  { color: var(--ok); }
+.verdict.bad { color: var(--danger); }
+
+/* ── Log table ──────────────────────────────────────── */
+.log-table { width: 100%; border-collapse: collapse; font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.log-table th {
+  text-align: left; padding: 6px 8px;
+  color: var(--muted); font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .05em;
+}
+.log-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.log-table tr:last-child td { border-bottom: none; }
+.ok-cell  { color: var(--ok);     font-weight: 500; }
+.bad-cell { color: var(--danger); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1>Smart Noise Alert System</h1>
+    <p>Lab Teknik Informatika UTM &nbsp;·&nbsp; Model: <strong>{{ model_name }}</strong> &nbsp;·&nbsp; Threshold: <strong>{{ threshold }}</strong></p>
+  </header>
+
+  <!-- Live Monitoring -->
+  <div class="card">
+    <div class="card-title">Monitoring Langsung</div>
+
+    <div id="banner" class="banner">
+      <span class="dot"></span>
+      <span id="banner-text">Belum aktif</span>
+    </div>
+
+    <div class="prob-row">
+      <span class="prob-label">Prob. berisik</span>
+      <div class="prob-track"><div class="prob-fill" id="prob-fill"></div></div>
+      <span class="prob-val" id="prob-pct">—</span>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-label">Level</span>
+        <span class="stat-value" id="stat-db">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Chunk</span>
+        <span class="stat-value" id="stat-count">0</span>
+      </div>
+    </div>
+
+    <div class="strip" id="strip"></div>
+
+    <div class="controls">
+      <button class="btn btn-primary"   id="btnStart">Mulai</button>
+      <button class="btn btn-secondary" id="btnStop" disabled>Berhenti</button>
+
+      <div class="window-row">
+        Alarm jika
+        <input id="needK" type="number" min="1" value="2">
+        dari
+        <input id="winM"  type="number" min="1" value="3">
+        chunk terakhir berisik
+      </div>
+
+      <label class="alarm-label">
+        <input id="sound" type="checkbox" checked> Bunyi alarm
+      </label>
+    </div>
+
+    <div class="err-msg" id="err"></div>
+    <p class="hint">Setiap chunk = 5 detik. Mikrofon memerlukan <code>localhost</code> atau HTTPS. Echo cancellation, noise suppression, dan auto-gain dimatikan agar sesuai data latih.</p>
+  </div>
+
+  <!-- File Analysis -->
+  <div class="card">
+    <div class="card-title">Analisis File Audio</div>
+    <div class="file-row">
+      <label class="file-pick-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Pilih file
+        <input id="file" type="file" accept="audio/*">
+      </label>
+      <span id="file-name">Belum ada file</span>
+      <button class="btn btn-primary" id="btnFile">Analisis</button>
+    </div>
+    <div class="file-result" id="fileOut"></div>
+  </div>
+
+  <!-- History -->
+  <div class="card">
+    <div class="card-title">Riwayat Deteksi</div>
+    <table class="log-table">
+      <thead>
+        <tr><th>Waktu</th><th>Probabilitas</th><th>Level (dBFS)</th><th>Hasil</th></tr>
+      </thead>
+      <tbody id="log"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+const WINDOW_SEC = 5;
+let ctx = null, stream = null, proc = null;
+let buf = [], collected = 0, running = false, history = [], total = 0;
+const $ = id => document.getElementById(id);
+
+function setStatus(cls, text) {
+  $('banner').className = 'banner' + (cls ? ' ' + cls : '');
+  $('banner-text').textContent = text;
+}
+
+function beep() {
+  if (!ctx) return;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sine'; o.frequency.value = 880;
+  g.gain.setValueAtTime(0.2, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(); o.stop(ctx.currentTime + 0.4);
+}
+function alarm() {
+  if ($('sound').checked) { beep(); setTimeout(beep, 500); setTimeout(beep, 1000); }
+}
+
+async function start() {
+  $('err').textContent = '';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+  } catch (e) { $('err').textContent = 'Mikrofon tidak bisa diakses: ' + e.message; return; }
+  ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(stream);
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = e => {
+    if (!running) return;
+    buf.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    collected += buf[buf.length - 1].length;
+    if (collected >= ctx.sampleRate * WINDOW_SEC) sendChunk();
+  };
+  src.connect(proc); proc.connect(ctx.destination);
+  running = true; history = []; buf = []; collected = 0; total = 0;
+  $('btnStart').disabled = true; $('btnStop').disabled = false;
+  setStatus('', 'Mendengarkan…');
+}
+
+function stop() {
+  running = false;
+  if (proc)   { proc.disconnect(); proc = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (ctx)    { ctx.close(); ctx = null; }
+  $('btnStart').disabled = false; $('btnStop').disabled = true;
+  setStatus('', 'Dihentikan');
+}
+
+async function sendChunk() {
+  const merged = new Float32Array(collected); let o = 0;
+  for (const b of buf) { merged.set(b, o); o += b.length; }
+  buf = []; collected = 0;
+  try {
+    const r = await fetch('/predict?sr=' + ctx.sampleRate, { method: 'POST', body: merged.buffer });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    handleResult(d);
+  } catch (e) { $('err').textContent = 'Gagal memproses: ' + e.message; }
+}
+
+function handleResult(d) {
+  total++;
+  history.push(d.noisy);
+  const M = Math.max(1, +$('winM').value), K = Math.max(1, +$('needK').value);
+  history = history.slice(-M);
+  const alarmOn = history.filter(Boolean).length >= K;
+
+  if (alarmOn)      { setStatus('bad',  'BERISIK — HARAP TENANG'); alarm(); }
+  else if (d.noisy) { setStatus('warn', 'Mulai ramai…'); }
+  else              { setStatus('ok',   'Tenang'); }
+
+  const pct = (d.prob * 100).toFixed(0);
+  $('prob-fill').style.width      = pct + '%';
+  $('prob-fill').style.background = d.noisy ? 'var(--danger)' : 'var(--ok)';
+  $('prob-pct').textContent       = pct + '%';
+  $('stat-db').textContent        = d.db.toFixed(0) + ' dB';
+  $('stat-count').textContent     = total;
+
+  const dot = document.createElement('span');
+  dot.className = 'strip-dot' + (d.noisy ? ' noisy' : '');
+  $('strip').appendChild(dot);
+  while ($('strip').children.length > 48) $('strip').removeChild($('strip').firstChild);
+
+  const tr = document.createElement('tr');
+  const cls = d.noisy ? 'bad-cell' : 'ok-cell';
+  const lbl = d.noisy ? 'Berisik' : 'Tenang';
+  const tag = alarmOn ? ' <small style="opacity:.7">(ALARM)</small>' : '';
+  tr.innerHTML = `<td>${new Date().toLocaleTimeString()}</td><td>${pct}%</td><td>${d.db.toFixed(0)}</td><td class="${cls}">${lbl}${tag}</td>`;
+  $('log').prepend(tr);
+  while ($('log').children.length > 30) $('log').removeChild($('log').lastChild);
+}
+
+$('file').addEventListener('change', () => {
+  $('file-name').textContent = $('file').files[0]?.name ?? 'Belum ada file';
+});
+
+async function analyzeFile() {
+  const f = $('file').files[0];
+  if (!f) { $('fileOut').textContent = 'Pilih file audio terlebih dahulu.'; return; }
+  $('fileOut').innerHTML = '<p style="color:var(--muted)">Menganalisis…</p>';
+  const fd = new FormData(); fd.append('file', f);
+  const r = await fetch('/predict_file', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (!r.ok) { $('fileOut').innerHTML = `<p style="color:var(--danger)">${d.error}</p>`; return; }
+  const pct  = (d.noisy_ratio * 100).toFixed(0);
+  const vcls = d.verdict === 'BERISIK' ? 'bad' : 'ok';
+  const dots = d.chunks.map(c =>
+    `<span class="strip-dot${c.noisy ? ' noisy' : ''}" title="${(c.prob*100).toFixed(0)}%"></span>`
+  ).join('');
+  $('fileOut').innerHTML = `
+    <p class="verdict ${vcls}">${d.verdict}</p>
+    <p style="font-size:.8125rem;color:var(--muted);margin-bottom:10px">${pct}% dari ${d.chunks.length} chunk terdeteksi berisik</p>
+    <div class="strip">${dots}</div>`;
+}
+
+$('btnStart').onclick = start;
+$('btnStop').onclick  = stop;
+$('btnFile').onclick  = analyzeFile;
+</script>
+</body>
+</html>
